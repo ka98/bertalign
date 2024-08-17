@@ -1,11 +1,81 @@
 import numpy as np
+import os
+import re
 
 from bertalign import model
 from bertalign.corelib import *
 from bertalign.utils import *
+from translate.storage.tmx import tmxfile
+
+from pandas import DataFrame
+
+from lxml import etree
+from translate.storage.tmx import tmxfile, tmxunit
+from translate.misc.xml_helpers import setXMLlang
+
+# Patching TMX Creation Plugin
+def addtranslation_patch(self, source, srclang, translation, translang, comment=None, context_prev=None, context_next=None, filename=None):
+        """Addtranslation method for testing old unit tests."""
+        unit = self.addsourceunit(source)
+        unit.target = translation
+        if comment is not None and len(comment) > 0:
+            unit.addnote(comment)
+
+        tuvs = unit.xmlelement.iterdescendants(self.namespaced("tuv"))
+        src_tuv = next(tuvs)
+        setXMLlang(src_tuv, srclang)
+        
+        if context_prev is not None and len(context_prev) > 0:
+            context_prev_element = etree.SubElement(src_tuv, self.namespaced("prop"), {"type": "context_prev"})
+            context_prev_element.text = context_prev.strip()
+            
+        if context_next is not None and len(context_next) > 0:
+            context_next_element = etree.SubElement(src_tuv, self.namespaced("prop"), {"type": "context_next"})
+            context_next_element.text = context_next.strip()
+        
+        tgt_tuv = next(tuvs)
+        setXMLlang(tgt_tuv, translang)
+        
+        if filename is not None and len(filename) > 0:
+            filename_element = etree.SubElement(tgt_tuv, self.namespaced("prop"), {"type": "filename"})
+            filename_element.text = filename.strip()
+        
+# def addcontext_prev_patch(self, text, origin=None, position="append"):
+#         """
+#         Add a context_prev property.
+
+#         The origin parameter is ignored
+#         """
+#         context_prev = etree.SubElement(self.xmlelement, self.namespaced("prop"), {"type": "context_prev"})
+#         context_prev.text = text.strip()
+        
+# def addcontext_next_patch(self, text, origin=None, position="append"):
+#         """
+#         Add a context_next property.
+
+#         The origin parameter is ignored
+#         """
+#         context_next = etree.SubElement(self.xmlelement, self.namespaced("prop"), {"type": "context_next"})
+#         context_next.text = text.strip()
+        
+# def addfilename_patch(self, text, origin=None, position="append"):
+#         """
+#         Add a context_next property.
+
+#         The origin parameter is ignored
+#         """
+#         filename = etree.SubElement(self.xmlelement, self.namespaced("prop"), {"type": "filename"})
+#         filename.text = text.strip()
+        
+setattr(tmxfile, "addtranslation", addtranslation_patch)
+# setattr(tmxunit, "addcontextprev", addcontext_prev_patch)
+# setattr(tmxunit, "addcontextnext", addcontext_next_patch)
+# setattr(tmxunit, "addfilename", addfilename_patch)
 
 class Bertalign:
     def __init__(self,
+                 src_lang,
+                 tgt_lang,
                  src,
                  tgt,
                  max_align=5,
@@ -15,6 +85,10 @@ class Bertalign:
                  margin=True,
                  len_penalty=True,
                  is_split=False,
+                 src_language_code="nb-NO",
+                 tgt_language_code="en-US",
+                 output_file="_output",
+                 title=""
                ):
         
         self.max_align = max_align
@@ -26,8 +100,8 @@ class Bertalign:
         
         src = clean_text(src)
         tgt = clean_text(tgt)
-        src_lang = detect_lang(src)
-        tgt_lang = detect_lang(tgt)
+        # src_lang = detect_lang(src)
+        # tgt_lang = detect_lang(tgt)
         
         if is_split:
             src_sents = src.splitlines()
@@ -63,6 +137,11 @@ class Bertalign:
         self.src_vecs = src_vecs
         self.tgt_vecs = tgt_vecs
         
+        self.src_language_code = src_language_code
+        self.tgt_language_code = tgt_language_code
+        self.output_file = output_file
+        self.title = title
+        
     def align_sents(self):
 
         print("Performing first-step alignment ...")
@@ -82,6 +161,138 @@ class Bertalign:
         
         print("Finished! Successfully aligning {} {} sentences to {} {} sentences\n".format(self.src_num, self.src_lang, self.tgt_num, self.tgt_lang))
         self.result = second_alignment
+    
+    def output_tmx(self):
+        tm_file = tmxfile(None, self.src_language_code, self.tgt_language_code)
+        H1 = ""
+        H2 = ""
+        H3 = ""
+        H4 = ""
+        H5 = ""
+        H6 = ""
+        for idx, bead in enumerate(self.result):
+            
+            prev_segment = None
+            next_segment = None
+            
+            if idx != 0:
+                prev_segment = re.sub(r'^#+\s+', '', self._get_line(self.result[idx-1][0], self.src_sents)).replace("*", "")
+                pass
+            if idx < len(self.result) - 1:
+                next_segment = re.sub(r'^#+\s+', '', self._get_line(self.result[idx+1][0], self.src_sents)).replace("*", "")
+                pass
+            
+            src_text = self._get_line(bead[0], self.src_sents)
+            tgt_text = self._get_line(bead[1], self.tgt_sents)
+            
+            if tgt_text.startswith("#"):
+                if tgt_text.startswith("##"):
+                    if tgt_text.startswith("###"):
+                        if tgt_text.startswith("####"):
+                            if tgt_text.startswith("#####"):
+                                if tgt_text.startswith("######"):
+                                    H6 = re.sub(r'^#+\s+', '', tgt_text)
+                                else:
+                                    H5 = re.sub(r'^#+\s+', '', tgt_text)
+                                    H6 = ""
+                            else:
+                                H4 = re.sub(r'^#+\s+', '', tgt_text)
+                                H5 = ""
+                                H6 = ""
+                        else:
+                            H3 = re.sub(r'^#+\s+', '', tgt_text)
+                            H4 = ""
+                            H5 = ""
+                            H6 = ""
+                    else:
+                        H2 = re.sub(r'^#+\s+', '', tgt_text)
+                        H3 = ""
+                        H4 = ""
+                        H5 = ""
+                        H6 = ""
+                else:
+                    H1 = re.sub(r'^#+\s+', '', tgt_text)
+                    H2 = ""
+                    H3 = ""
+                    H4 = ""
+                    H5 = ""
+                    H6 = ""
+                    
+            src_text = re.sub(r'^#+\s+', '', src_text).replace("*", "")
+            tgt_text = re.sub(r'^#+\s+', '', tgt_text).replace("*", "")
+            
+            # i = 1
+            # x = 1
+            
+            # # check if Markdown annotation, only Emph is supported for now!
+            # if src_text.count("*") > 0:
+            #     if src_text.count("*") % 2:
+            #         # even, so we have to inject notation
+            #         while src_text.count("*") > 1:
+            #             src_text = src_text.replace('*', f'<bpt i="{i}" x = "{x}" type="italic"\><i>\</bpt\>', 1)
+            #             src_text = src_text.replace('*', f'<ept i="{i}" x = "{x}" type="italic"\></i>\</ept\>', 1)
+            #             i = i + 1
+            #             x = x + 1
+            #         #<bpt i="1000001" x="1000001" type="formatting">{b&gt;</bpt>
+            #         #<ept i="1000001">&lt;b}</ept>
+            #     else:
+            #         src_text = src_text.replace("*", "")
+                 
+            # i = 1
+            # x = 1
+                    
+            # if tgt_text.count("*") > 0:
+            #     if tgt_text.count("*") % 2:
+            #         # even, so we have to inject notation
+            #         while tgt_text.count("*") > 1:
+            #             tgt_text = tgt_text.replace('*', f'<bpt i="{i}" x = "{x}" type="italic"\><i>\</bpt\>', 1)
+            #             tgt_text = tgt_text.replace('*', f'<ept i="{i}" x = "{x}" type="italic"\></i>\</ept\>', 1)
+            #         #<bpt i="1000001" x="1000001" type="formatting">{b&gt;</bpt>
+            #         #<ept i="1000001">&lt;b}</ept>
+            #     else:
+            #         tgt_text = tgt_text.replace("*", "")
+            src_text = src_text.replace('<span class="calibre16">', f'<btp i="1" x="1" type="ulined">')
+            # Replace the closing span tag with </ept> including attributes and formatting type
+            src_text = src_text.replace('</span>', f'</ept i="1" x="1" type="ulined">')
+            
+            src_text = etree.CDATA(src_text)
+            
+            filename = self.title
+            if H1:
+                filename += f" - {H1}"
+            if H2:
+                filename += f" - {H2}"
+            if H3:
+                filename += f" - {H3}"
+            if H4:
+                filename += f" - {H4}"
+            if H5:
+                filename += f" - {H5}"
+            if H6:
+                filename += f" - {H6}"
+            
+            tm_file.addtranslation(
+                src_text,
+                self.src_language_code,
+                tgt_text,
+                self.tgt_language_code,
+                context_prev=prev_segment,
+                context_next=next_segment,
+                filename=filename
+                
+            )
+        with open(f"{self.tgt_lang}_{self.output_file}.tmx", "wb") as output:
+            tm_file.serialize(output)
+            
+    def output_excel(self):
+        list = []
+        for bead in (self.result):
+            list.append(
+                (self._get_line(bead[0], self.src_sents),
+                self._get_line(bead[1], self.tgt_sents))
+            )
+        df = DataFrame(list, columns=[self.src_language_code, self.tgt_language_code])
+        df.to_excel(f"{self.tgt_lang}_{self.output_file}.xlsx", sheet_name='sheet1', index=False)
     
     def print_sents(self):
         for bead in (self.result):
