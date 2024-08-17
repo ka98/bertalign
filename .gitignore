@@ -3,3 +3,4 @@ literature
 *.xlsx
 .vscode
 *.txt
+__pycache__
