@@ -13,6 +13,38 @@ from lxml import etree
 from translate.storage.tmx import tmxfile, tmxunit
 from translate.misc.xml_helpers import setXMLlang
 
+
+def replace_markup(text :str):
+    text = text.replace('&','&amp;')
+    text = text.replace(' < ', '&lt;')
+    begin_uline = '<span class="calibre15">'
+    end_uline = '</span>'
+    # text = text.replace('<span class="calibre15">', '<it pos="begin" type="formatting">{u&gt;</it>')
+    # text = text.replace('<span class="calibre16">', '<it pos="begin" type="formatting">{u&gt;</it>')
+    # text = text.replace('</span>', '<it pos="end" type="formatting">&lt;u}</it>')
+    pos_begin_uline = text.find(begin_uline)
+    pos_end_uline = text.find(end_uline)
+    pos_last_begin_uline = text.rfind(begin_uline)
+    pos_last_end_uline = text.rfind(end_uline)
+    # Case 1, btp as first and ept as last
+    # Case 2, ept in the beginnning
+    # Case 3, btp as last   
+    if pos_begin_uline > pos_end_uline or pos_begin_uline == -1 and pos_end_uline != -1:
+        text = begin_uline + text
+    if pos_last_end_uline < pos_last_begin_uline or pos_last_end_uline == -1 and pos_last_begin_uline != -1:
+        text = text + end_uline
+        
+    i = 1000001
+    while begin_uline in text:
+        text = text.replace(begin_uline, f'<bpt i="{i}" x="{i}" type="formatting">{{u&gt;</bpt>', 1)
+        i += 1
+    i = 1000001
+    while end_uline in text:
+        text = text.replace(end_uline, f'<ept i="{i}" type="formatting">&lt;u}}</ept>', 1)
+        i += 1
+    text = etree.CDATA(text)
+    return text
+
 # Patching TMX Creation Plugin
 def addtranslation_patch(self, source, srclang, translation, translang, comment=None, context_prev=None, context_next=None, filename=None):
         """Addtranslation method for testing old unit tests."""
@@ -25,13 +57,13 @@ def addtranslation_patch(self, source, srclang, translation, translang, comment=
         src_tuv = next(tuvs)
         setXMLlang(src_tuv, srclang)
         
-        if context_prev is not None and len(context_prev) > 0:
+        if context_prev is not None:
             context_prev_element = etree.SubElement(src_tuv, self.namespaced("prop"), {"type": "context_prev"})
-            context_prev_element.text = context_prev.strip()
+            context_prev_element.text = context_prev
             
-        if context_next is not None and len(context_next) > 0:
+        if context_next is not None:
             context_next_element = etree.SubElement(src_tuv, self.namespaced("prop"), {"type": "context_next"})
-            context_next_element.text = context_next.strip()
+            context_next_element.text = context_next
         
         tgt_tuv = next(tuvs)
         setXMLlang(tgt_tuv, translang)
@@ -172,15 +204,7 @@ class Bertalign:
         H6 = ""
         for idx, bead in enumerate(self.result):
             
-            prev_segment = None
-            next_segment = None
-            
-            if idx != 0:
-                prev_segment = re.sub(r'^#+\s+', '', self._get_line(self.result[idx-1][0], self.src_sents)).replace("*", "")
-                pass
-            if idx < len(self.result) - 1:
-                next_segment = re.sub(r'^#+\s+', '', self._get_line(self.result[idx+1][0], self.src_sents)).replace("*", "")
-                pass
+
             
             src_text = self._get_line(bead[0], self.src_sents)
             tgt_text = self._get_line(bead[1], self.tgt_sents)
@@ -251,11 +275,19 @@ class Bertalign:
             #         #<ept i="1000001">&lt;b}</ept>
             #     else:
             #         tgt_text = tgt_text.replace("*", "")
-            src_text = src_text.replace('<span class="calibre16">', f'<btp i="1" x="1" type="ulined">')
-            # Replace the closing span tag with </ept> including attributes and formatting type
-            src_text = src_text.replace('</span>', f'</ept i="1" x="1" type="ulined">')
+            src_text = replace_markup(src_text)
+
+            tgt_text = replace_markup(tgt_text)
+
+            prev_segment = None
+            next_segment = None
             
-            src_text = etree.CDATA(src_text)
+            if idx != 0:
+                prev_segment = re.sub(r'^#+\s+', '', self._get_line(self.result[idx-1][0], self.src_sents)).replace("*", "")
+                prev_segment = replace_markup(prev_segment)
+            if idx < len(self.result) - 1:
+                next_segment = re.sub(r'^#+\s+', '', self._get_line(self.result[idx+1][0], self.src_sents)).replace("*", "")
+                next_segment = replace_markup(next_segment)
             
             filename = self.title
             if H1:
