@@ -1,6 +1,8 @@
 from bertalign import Bertalign
 import pickle
 import os.path
+import subprocess
+
 if not os.path.isfile("aligned.txt"): 
     with open("literature/jos/to_be_aligned/nb_jos_01.md") as file:
         src = file.read()
@@ -18,3 +20,7 @@ else:
 aligner.output_tmx()
 aligner.output_excel()
 # aligner.print_sents()
+
+subprocess.call(["sed -i 's/<!\[CDATA\[//g' German_jos.tmx"], shell=True)
+subprocess.call(["sed -i 's/\]\]>//g' German_jos.tmx"], shell=True)
+subprocess.call(["sed -i 's@<header creationtool=\"Translate Toolkit\" creationtoolversion=\"3.12.2\" segtype=\"sentence\" o-tmf=\"UTF-8\" adminlang=\"en\" srclang=\"nb-NO\" datatype=\"PlainText\"/>@<header creationtool=\"memsource_tool\" creationtoolversion=\"2.0\" segtype=\"sentence\" o-tmf=\"memsourceTM\" adminlang=\"en\" srclang=\"nb-no\" datatype=\"unknown\" creationdate=\"20240828T154242Z\"/>@g' German_jos.tmx"], shell=True)
